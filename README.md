@@ -1,8 +1,8 @@
 ﻿# cs2-Ddrun-HNS
 
-simple ddrun plugin on CS# for HNS Servers
+Simple ddrun plugin on CS# for HNS Servers
 
-Features:
+### Features:
 - No stuck playback
 - Support for the default +duck binding
 - Only works with the mouse wheel
@@ -12,6 +12,10 @@ bind for use:
 
 	bind "MwheelDown" "+duck"
 
-video demonstration - https://youtu.be/ImZqG9iHMyE 
+[Video demonstration](https://youtu.be/ImZqG9iHMyE )
 
+### Requirements
 
+- [MetaMod](https://github.com/alliedmodders/metamod-source)
+- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
+- [MovementUnlocker](https://github.com/Source2ZE/MovementUnlocker)
