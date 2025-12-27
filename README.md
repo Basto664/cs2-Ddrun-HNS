@@ -3,10 +3,10 @@
 Simple ddrun plugin on CS# for HNS Servers
 
 ### Features:
+- DDRun and SGS
 - No stuck playback
 - Support for the default +duck binding
 - Only works with the mouse wheel
-- Possibility to use SGS
 
 bind for use:
 
@@ -19,3 +19,4 @@ bind for use:
 - [MetaMod](https://github.com/alliedmodders/metamod-source)
 - [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
 - [MovementUnlocker](https://github.com/Source2ZE/MovementUnlocker)
+
