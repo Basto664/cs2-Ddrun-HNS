@@ -8,10 +8,10 @@ public class _ : BasePlugin
 {
     public override string ModuleName => "DDRun";
     public override string ModuleAuthor => "Fi4";
-    public override string ModuleVersion => "0.3";
+    public override string ModuleVersion => "0.5";
 
-    private static readonly byte ServerTickRate = 64;
-    private const float DuckHeight = 18f;
+    private const byte ServerTickRate = 64;
+    private const float DuckHeight = 17.5f;
     private const float PlayerHeight = 72;
     private const float NormalDuckSpeed = 6.023437f; //6.023437f
     private List<CCSPlayerController> _players = null!;
@@ -32,8 +32,8 @@ public class _ : BasePlugin
             var pawn = id.PlayerPawn.Value;
             if (pawn == null || pawn.Health <= 0 || pawn.MovementServices == null || pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) continue;
             var idMove = pawn.MovementServices;
-            var isOnGround = pawn.OnGroundLastTick;
             var whenDuckButton = idMove.ButtonPressedCmdNumber[2];
+            var isOnGround = pawn.OnGroundLastTick;
             switch (isOnGround)
             {
                 case false when whenDuckButton != _whenUserDuck[id.Slot]:
@@ -44,8 +44,9 @@ public class _ : BasePlugin
                 case true when whenDuckButton != _whenUserDuck[id.Slot]:
                     ChangePlayerStatus();
                     var ddHeight = GiveTrueDdHeight(id);
-                    _whenUserStartDdRun[id.Slot] = Server.CurrentTime;
                     new CCSPlayer_MovementServices(idMove.Handle).Ducking = true;
+                    _whenUserStartDdRun[id.Slot] = Server.CurrentTime + 0.1f;
+                    var speedOld = Math.Round(pawn.AbsVelocity.Length2D());
                     Server.NextFrame(() =>
                     {
                         if (pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) return;
@@ -57,19 +58,32 @@ public class _ : BasePlugin
                             Server.NextFrame(() =>
                             {
                                 pawn.AbsVelocity.Z = 0;
-                                Server.NextFrame(() =>
+                                if(((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING)
                                 {
-                                    pawn.AbsVelocity.Z += -ddHeight * 2;
-                                });
+                                    if (Math.Round(pawn.AbsVelocity.Length2D()) - speedOld > 200)
+                                    {
+                                        pawn.AbsVelocity.X *= 0.25f;
+                                        pawn.AbsVelocity.Y *= 0.25f;
+                                    }
+                                }
+                                Server.NextFrame(() => pawn.AbsVelocity.Z -= ddHeight * 2);
                             });
                         });
                     });
+
                     break;
             }
 
             var duckSpeed = NormalDuckSpeed;
-            if (Server.CurrentTime - _whenUserStartDdRun[id.Slot] < 0.3f)
+            if (Server.CurrentTime - _whenUserStartDdRun[id.Slot] < 0.3f && _whenUserStartDdRun[id.Slot] - Server.CurrentTime < 0)
+            {
                 duckSpeed *= ServerTickRate;
+                if (((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING && Server.CurrentTime - _whenUserStartDdRun[id.Slot] < 0.15f)
+                {
+                    pawn.AbsVelocity.Z += DuckHeight;
+                    _whenUserStartDdRun[id.Slot] -= 0.15f;
+                }
+            }
 
             new CCSPlayer_MovementServices(idMove.Handle).DuckSpeed = duckSpeed;
             continue;
