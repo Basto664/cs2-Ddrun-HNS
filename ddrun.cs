@@ -47,7 +47,7 @@ public class _ : BasePlugin
                 }
             }
 
-            idMove.DuckSpeed = duckSpeed;
+            // idMove.DuckSpeed = duckSpeed;
 
             switch (pawn.OnGroundLastTick)
             {
