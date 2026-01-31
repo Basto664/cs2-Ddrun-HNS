@@ -1,0 +1,56 @@
+name: Build the plugin
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  release:
+    types:
+      - created
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 8.0.x
+      - name: Build
+        run: dotnet build -c Release
+      - name: Create output directory
+        run: |
+          mkdir -p output/ddrun
+          mv /home/runner/work/cs2-Ddrun-HNS-fix/cs2-Ddrun-HNS-fix/bin/Release/net8.0/ddrun.dll output/ddrun/
+      - name: Publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ddrun-${{ github.sha }}
+          path: output
+
+  release:
+    needs: build
+    permissions: write-all
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ddrun-${{ github.sha }}
+      - name: Create release assets
+        run: |
+          zip -r ddrun-${{ github.sha }}.zip ./ddrun
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./ddrun-${{ github.sha }}.zip
+          asset_name: "ddrun-${{ github.event.release.tag_name }}.zip"
+          asset_content_type: application/zip
