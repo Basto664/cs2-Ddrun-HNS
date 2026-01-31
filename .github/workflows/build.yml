@@ -24,7 +24,7 @@ jobs:
       - name: Create output directory
         run: |
           mkdir -p output/cs2-Ddrun-HNS
-          mv ./bin/Release/net8.0/cs2-Ddrun-HNS.dll output/cs2-Ddrun-HNS/
+          mv /home/runner/work/cs2-Ddrun-HNS-fix/cs2-Ddrun-HNS-fix/bin/Release/net8.0/ddrun.dll output/cs2-Ddrun-HNS/
       - name: Publish artifact
         uses: actions/upload-artifact@v4
         with:
