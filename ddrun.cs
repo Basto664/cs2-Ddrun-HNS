@@ -8,130 +8,154 @@ public class _ : BasePlugin
 {
     public override string ModuleName => "DDRun";
     public override string ModuleAuthor => "Fi4";
-    public override string ModuleVersion => "0.5r";
+    public override string ModuleVersion => "0.6";
 
     private const byte ServerTickRate = 64;
     private const float DuckHeight = 17.5f;
     private const float PlayerHeight = 72;
     private const float NormalDuckSpeed = 6.023437f; //6.023437f
     private const float SgsTime = 0.15f;
-    private List<CCSPlayerController> _players = null!;
+    private readonly List<CCSPlayerController> _players = new();
     private readonly ulong[] _whenUserDuck = new ulong[64];
     private readonly float[] _whenUserStartDdRun = new float[64];
 
     public override void Load(bool hotReload)
     {
         RegisterListener<Listeners.OnTick>(OnTick);
+        RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
+        RegisterEventHandler<EventPlayerDisconnect>(OnDisconnect);
     }
 
     private void OnTick()
     {
-        GetPlayers();
         foreach (var id in _players)
         {
-            if (id == null! || !id.IsValid) continue;
             var pawn = id.PlayerPawn.Value;
-            if (pawn == null || pawn.Health <= 0 || pawn.MovementServices == null || pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) continue;
-            var idMove = pawn.MovementServices;
-            var whenDuckButton = idMove.ButtonPressedCmdNumber[2];
+            if (pawn == null || !pawn.IsValid || pawn.Health <= 0) continue;
 
-            var duckSpeed = NormalDuckSpeed;
-            if (Server.CurrentTime - _whenUserStartDdRun[id.Slot] < SgsTime*2 && _whenUserStartDdRun[id.Slot] - Server.CurrentTime < 0)
+            var moveServices = pawn.MovementServices;
+            if (moveServices == null || pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) continue;
+
+            var movement = new CCSPlayer_MovementServices(moveServices.Handle);
+            var currentDuckCmd = movement.ButtonPressedCmdNumber[2];
+            var slot = id.Slot;
+
+            UpdateDuckSpeed(pawn, movement, slot);
+
+            var isDucking = ((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING || (id.Buttons & PlayerButtons.Duck) != 0;
+            var duckChanged = currentDuckCmd != _whenUserDuck[slot];
+
+            if (!duckChanged) continue;
+            _whenUserDuck[slot] = currentDuckCmd;
+            if (!pawn.OnGroundLastTick || isDucking) continue;
+            pawn.OnGroundLastTick = false;
+            var ddHeight = GiveTrueDdHeight(id);
+            _whenUserStartDdRun[id.Slot] = Server.CurrentTime + SgsTime;
+            var speedOld = pawn.AbsVelocity.Length2D();
+            Server.NextFrame(() =>
             {
-                duckSpeed *= ServerTickRate;
-                if (((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING &&
-                    Server.CurrentTime - _whenUserStartDdRun[id.Slot] < SgsTime)
+                if (pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) return;
+                movement.Ducking = true;
+                pawn.OnGroundLastTick = false;
+                pawn.AbsVelocity.Z += ddHeight * ServerTickRate;
+                Server.NextFrame(() =>
                 {
-                    pawn.AbsVelocity.Z += DuckHeight;
-                    _whenUserStartDdRun[id.Slot] -= SgsTime;
-                }
-            }
-
-            new CCSPlayer_MovementServices(idMove.Handle).DuckSpeed = duckSpeed;
-
-            switch (pawn.OnGroundLastTick)
-            {
-                case false when whenDuckButton != _whenUserDuck[id.Slot]:
-                case true when (id.Buttons & PlayerButtons.Duck) != 0:
-                case true when ((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING:
-                    ChangePlayerStatus();
-                    break;
-                case true when whenDuckButton != _whenUserDuck[id.Slot]:
-                    ChangePlayerStatus();
-                    var ddHeight = GiveTrueDdHeight(id);
-                    _whenUserStartDdRun[id.Slot] = Server.CurrentTime + SgsTime;
-                    new CCSPlayer_MovementServices(idMove.Handle).Ducking = true;
-                    var speedOld = Math.Round(pawn.AbsVelocity.Length2D());
+                    pawn.OnGroundLastTick = false;
                     Server.NextFrame(() =>
                     {
-                        if (pawn.MoveType == MoveType_t.MOVETYPE_OBSOLETE) return;
-                        ChangePlayerStatus();
-                        pawn.AbsVelocity.Z += ddHeight * ServerTickRate;
-                        Server.NextFrame(() =>
+                        pawn.OnGroundLastTick = false;
+                        pawn.AbsVelocity.Z = 0;
+                        if(((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING)
                         {
-                            ChangePlayerStatus();
-                            Server.NextFrame(() =>
+                            if (pawn.AbsVelocity.Length2D() - speedOld > 200)
                             {
-                                pawn.AbsVelocity.Z = 0;
-                                if(((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING)
-                                {
-                                    if (Math.Round(pawn.AbsVelocity.Length2D()) - speedOld > 200)
-                                    {
-                                        pawn.AbsVelocity.X *= 0.25f;
-                                        pawn.AbsVelocity.Y *= 0.25f;
-                                    }
-                                }
-                                Server.NextFrame(() => pawn.AbsVelocity.Z -= ddHeight * 2);
-                            });
-                        });
+                                pawn.AbsVelocity.X *= 0.25f;
+                                pawn.AbsVelocity.Y *= 0.25f;
+                            }
+                        }
+                        Server.NextFrame(() => pawn.AbsVelocity.Z -= ddHeight * 2);
                     });
-
-                    break;
-            }
-            continue;
-
-            void ChangePlayerStatus()
-            {
-                _whenUserDuck[id.Slot] = whenDuckButton;
-                pawn.OnGroundLastTick = false;
-            }
-
+                });
+            });
         }
     }
+
+    private void UpdateDuckSpeed(CCSPlayerPawn pawn, CCSPlayer_MovementServices movement, int slot)
+    {
+        var timeDiff = Server.CurrentTime - _whenUserStartDdRun[slot];
+
+        if (timeDiff is < SgsTime * 2 and > 0)
+        {
+            movement.DuckSpeed = NormalDuckSpeed * ServerTickRate;
+
+            var isDucking = ((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING;
+            if (isDucking && timeDiff < SgsTime)
+            {
+                pawn.AbsVelocity.Z += DuckHeight;
+                _whenUserStartDdRun[slot] -= SgsTime;
+            }
+        }
+        else
+        {
+            movement.DuckSpeed = NormalDuckSpeed;
+        }
+    }
+
     private float GiveTrueDdHeight(CCSPlayerController id)
     {
-        var idPlayerPawn = id.PlayerPawn.Value;
-        var ddRunHeight = DuckHeight;
-        if(idPlayerPawn == null || idPlayerPawn.AbsOrigin == null) return ddRunHeight;
-        var origin = idPlayerPawn.AbsOrigin!;
+        var pawn = id.PlayerPawn.Value;
+        if (pawn == null) return DuckHeight;
 
-        foreach (var pawnOnHead in from onHeadPlayer in _players where onHeadPlayer.PawnIsAlive && onHeadPlayer != id select onHeadPlayer.PlayerPawn.Value)
+        var pos = pawn.AbsOrigin;
+        if (pos == null) return DuckHeight;
+
+        var x = pos.X;
+        var y = pos.Y;
+        var z = pos.Z;
+
+        const float originTolerance = DuckHeight*2;
+        const float zTolerance = PlayerHeight + DuckHeight*2;
+
+        foreach (var headPlayer in _players)
         {
-            if(pawnOnHead == null || pawnOnHead.AbsOrigin == null) continue;
-            var originOnHead = pawnOnHead.AbsOrigin!;
-            const float originTolerance = 32;
-            const float zTolerance = PlayerHeight + DuckHeight*2f;
+            if (headPlayer == null! || headPlayer == id || !headPlayer.PawnIsAlive) continue;
 
-            if (Math.Abs(originOnHead.X - origin.X) <= originTolerance
-                && Math.Abs(originOnHead.Y - origin.Y) <= originTolerance
-                && originOnHead.Z > origin.Z
-                && Math.Abs(originOnHead.Z - origin.Z) <= zTolerance
-                && Math.Abs(originOnHead.Z - origin.Z) >= PlayerHeight)
-            {
-                ddRunHeight -= zTolerance - (originOnHead.Z - origin.Z);
-                return ddRunHeight > 0? ddRunHeight : 0;
-            }
+            var pawnOnHead = headPlayer.PlayerPawn.Value;
+            if (pawnOnHead == null) continue;
+
+            var originOnHead = pawnOnHead.AbsOrigin;
+            if (originOnHead == null) continue;
+
+            var zDiff = originOnHead.Z - z;
+            if (zDiff is < PlayerHeight or > zTolerance) continue;
+
+            if (Math.Abs(originOnHead.X - x) > originTolerance) continue;
+            if (Math.Abs(originOnHead.Y - y) > originTolerance) continue;
+
+            // Если дошли сюда — игрок сверху
+            var resultHeight = DuckHeight - (zTolerance - zDiff);
+            return resultHeight > 0 ? resultHeight : 0;
         }
-        return ddRunHeight;
+
+        return DuckHeight;
     }
 
-    private byte _tickCache;
-    private void GetPlayers()
+    private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo env)
     {
-        const int intervalInSecond = 2;
-        _tickCache++;
-        if (_tickCache <= intervalInSecond*ServerTickRate && _players != null! && _players.Count != 0) return;
-        _tickCache = 0;
-        _players = Utilities.GetPlayers();
+        var id = @event.Userid;
+        if (id == null || !id.IsValid) return HookResult.Continue;
+        _players.Add(id);
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
+    {
+        var id = @event.Userid;
+        if (id == null || !id.IsValid)
+            return HookResult.Continue;
+        _players.Remove(id);
+
+        return HookResult.Continue;
     }
 }
