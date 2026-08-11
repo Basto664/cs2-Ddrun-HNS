@@ -12,7 +12,7 @@ public class _ : BasePlugin
     public override string ModuleVersion => "0.7";
 
     private const byte ServerTickRate = 64;
-    private const float DuckHeight = 18;
+    private const float DuckHeight = 17.5f;
     private const float PlayerHeight = 72;
     private const float NormalDuckSpeed = 6.023437f;
     private const float SgsTime = 0.18f;
@@ -76,11 +76,11 @@ public class _ : BasePlugin
                             pawn.AbsVelocity.Y *= 0.25f;
                         }
                     }
-                    user.DuckTick = 4;
+                    user.DuckTick = 5;
                     continue;
                 case 4:
+                    pawn.AbsVelocity.Z -= user.CurrentDuckHeight * 2f;
                     user.DuckTick = 0;
-                    pawn.AbsVelocity.Z -= user.CurrentDuckHeight * 2;
                     continue;
             }
 
@@ -91,7 +91,8 @@ public class _ : BasePlugin
             user.WhenUserStartDDRun = Server.CurrentTime + SgsTime;
             user.SpeedBeforeDuck = pawn.AbsVelocity.Length2D();
             user.DuckTick = 1;
-            pawn.AbsVelocity.Z = 0;
+            movement.Ducking = true;
+            movement.DuckSpeed = NormalDuckSpeed;
         }
     }
 
@@ -101,18 +102,14 @@ public class _ : BasePlugin
 
         if (timeDiff is < SgsTime * 2 and > 0)
         {
-            movement.DuckSpeed = NormalDuckSpeed * ServerTickRate;
+            movement.DuckSpeed = NormalDuckSpeed * 2;
 
             var isDucking = ((PlayerFlags)pawn.Flags & PlayerFlags.FL_DUCKING) == PlayerFlags.FL_DUCKING;
             if (isDucking && timeDiff < SgsTime)
             {
-                pawn.AbsVelocity.Z += DuckHeight;
+                pawn.AbsVelocity.Z += DuckHeight/1.75f;
                 Users[slot]!.WhenUserStartDDRun -= SgsTime;
             }
-        }
-        else
-        {
-            movement.DuckSpeed = NormalDuckSpeed;
         }
     }
 
